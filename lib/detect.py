@@ -48,6 +48,7 @@ class Worker(object):
 
     def run(self):
 
+        # init opencv settings
         cap = cv.VideoCapture(0, cv.CAP_DSHOW)
         cv.namedWindow("subtle facial", cv.WINDOW_NORMAL)
         cv.resizeWindow('subtle facial', self.width, self.height)
@@ -56,6 +57,7 @@ class Worker(object):
         
         self.model = load_model('./models/'+modelName+'.h5')
    
+        # get facial part
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
         c.execute("SELECT facePart FROM facials")
@@ -87,7 +89,7 @@ class Worker(object):
             self.pos2 = [427, 210]
             self.sz = [78,28]
         
-        
+        # start real time capture and detect
         with mp_face_mesh.FaceMesh(
                 max_num_faces=1,
                 refine_landmarks=True,
@@ -124,7 +126,7 @@ class Worker(object):
                     except Exception as e:
                         continue
 
-
+                    # model predict
                     img_array = np.expand_dims(cropped_img, axis=0)
                     img = img_array.astype(np.float32) / 255.0
                     prediction = self.model.predict(img,verbose=0)
@@ -132,7 +134,7 @@ class Worker(object):
 
 
                     if prediction>0.55:
-                        if success_cnt==5:
+                        if success_cnt==5: # logic for blocking false alarm
                             self.queue.put(1)
                             cv.putText(frame, "DETECTED", (100,100), cv.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3, cv.LINE_AA)
                             print("gotcha")

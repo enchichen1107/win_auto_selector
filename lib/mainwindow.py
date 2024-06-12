@@ -15,6 +15,7 @@ modelName = "init"
 clicked = False
 
 def on_click(x, y, button, pressed):
+    ''' mouse left clicked listener '''
     if pressed: 
         pass
     elif not pressed:
@@ -73,6 +74,8 @@ class MainWindow(object):
 
         
     def btn_callback(self, key_text):
+        '''  button callback for hot key panel '''
+
         global clicked
         clicked = False
         keys = key_text.split(',')
@@ -81,31 +84,21 @@ class MainWindow(object):
         on_click=on_click) as listener:
             listener.join()
 
+        # apply hot keys until left click is detected
         while clicked==False:
             pass
 
 
         if len(keys)==1:
-            # time.sleep(0.5)
             pyautogui.click(button='right')
         elif len(keys)==2:
-            # time.sleep(0.5)
-            # pyautogui.click(button='left')
             pyautogui.hotkey(keys[0],keys[1], interval=0.05)
         elif len(keys)==3:
-            # time.sleep(0.5)
-            # pyautogui.click(button='left')
             pyautogui.hotkey(keys[0],keys[1],keys[2], interval=0.05)
         elif len(keys)==4:
-            # time.sleep(0.5)
-            # pyautogui.click(button='left')
             pyautogui.hotkey(keys[0],keys[1],keys[2],keys[3], interval=0.05)
         elif len(keys)==5:
-            # time.sleep(0.5)
-            # pyautogui.click(button='left')
             pyautogui.hotkey(keys[0],keys[1],keys[2],keys[3],keys[4], interval=0.05)
-        # if self.continue_subtle==0:
-        #     self.subtle.attributes("-topmost", False)
 
         clicked = False
             
@@ -115,6 +108,7 @@ class MainWindow(object):
         
 
     def show(self):
+        '''  show root window '''
 
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -122,7 +116,7 @@ class MainWindow(object):
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
 
-        
+        # if hasn't chosen facial part, then choose it first
         listOfTables = c.execute(
             """SELECT * FROM sqlite_master WHERE type='table' 
             AND name='facials'; """).fetchall()
@@ -161,7 +155,6 @@ class MainWindow(object):
             self.continue_btn = Button(self.root, text="連續用快捷鍵", command=self.show_subtle_continue)
             self.continue_btn.grid(row=2, column=0, pady=5, ipadx=10)
 
-            # Create Edit Button
             self.create_btn = Button(self.root, text="編輯快捷鍵", command=self.edit)
             self.create_btn.grid(row=3, column=0, pady=5, ipadx=10)
             
@@ -199,7 +192,7 @@ class MainWindow(object):
         self.subtle.attributes('-alpha',0.8)
         self.subtle.deiconify()
         
-        
+        # get all keys
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
         c.execute("SELECT *, oid FROM keys")
@@ -255,12 +248,15 @@ class MainWindow(object):
 
 
     def restore_init(self):
+        '''  restore all settings '''
 
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()      
         c.execute("DROP TABLE IF EXISTS facials;")
         conn.commit()
         c.execute("DROP TABLE IF EXISTS domains;")
+        conn.commit()
+        c.execute("DROP TABLE IF EXISTS positions;")
         conn.commit()
         conn.close()
 
@@ -290,6 +286,8 @@ class MainWindow(object):
 
 
     def show_restore(self):
+        '''  confirm window for restore operation '''
+
         self.root.withdraw()
         
         if hasattr(self,'restore')==False :
@@ -317,6 +315,7 @@ class MainWindow(object):
         
         
     def update(self):
+        '''  update hot keys '''
 
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
@@ -346,6 +345,7 @@ class MainWindow(object):
         
 
     def edit(self):
+        ''' show edit panel '''
         
         self.root.withdraw()
         
@@ -417,16 +417,14 @@ class MainWindow(object):
     def backto(self):
         self.editor.destroy()
         delattr(self, "editor")
-        # self.editor.withdraw()
         self.root.deiconify()
         self.show()     
         
         
     
     
-    # 
-    # Create Create function to create a record
     def create(self):
+        '''  create a record '''
 
         self.editor.withdraw()
 
@@ -472,8 +470,9 @@ class MainWindow(object):
 
 
         
-    # Create Function to Delete A Record
+
     def delete(self):
+        '''  delete a record '''
 
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
@@ -489,7 +488,8 @@ class MainWindow(object):
         
         
     def create_window_delete(self):
-   
+        ''' delete create panel '''
+
         if hasattr(self,'creator'):
             self.creator.destroy()
             delattr(self, "creator")
@@ -502,8 +502,8 @@ class MainWindow(object):
 
 
 
-    # Create Submit Function For database
     def submit(self):
+        ''' submit created record '''
 
         description = self.descrip.get()
         hotkey = self.hotkeys.get()
@@ -511,6 +511,7 @@ class MainWindow(object):
         if hasattr(self,'dialogue'):
             self.dialogue.destroy()
         
+        # logic for validate input
         if description=="" or hotkey=="":                    
             self.dialogue_text = "輸入不得為空白"
         elif ' ' in hotkey:
@@ -550,6 +551,7 @@ class MainWindow(object):
 
         
     def submit_face(self):
+        '''  submit chosen facial parts '''
 
         conn = sqlite3.connect('./models/key_book.db')
         c = conn.cursor()
@@ -584,7 +586,9 @@ class MainWindow(object):
         
         
     def start(self):
+        '''  start to detect subtle facial expression '''
 
+        # remind create model first
         if not os.path.isfile('./models/'+modelName+'.h5'):
             self.root.withdraw()
         
@@ -610,6 +614,7 @@ class MainWindow(object):
 
             self.remind.protocol("WM_DELETE_WINDOW", self.remind_backto)
        
+        # get worker for detect subtle facial expression
         else:
             self.stop()
             self.root.withdraw()
@@ -649,8 +654,7 @@ class MainWindow(object):
         if hasattr(self,'subtle')==True:
             self.subtle.destroy()
             delattr(self, "subtle")
-        self.root.deiconify()
-        # self.show()   
+        self.root.deiconify()  
 
 
 
