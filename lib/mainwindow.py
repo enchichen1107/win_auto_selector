@@ -10,6 +10,7 @@ import shutil
 from PIL import ImageTk
 import multiprocessing
 from pynput import mouse
+from pynput import keyboard
 
 modelName = "init"
 clicked = False
@@ -434,39 +435,48 @@ class MainWindow(object):
 
         self.creator = Toplevel(self.editor)
         self.creator.title('Create A Setting')
-        self.creator.geometry("300x300")
+        self.creator.geometry("300x250")  
 
         for widget in self.creator.winfo_children():
             widget.destroy()
         
         self.creator.geometry('+{}+{}'.format(int(self.width/2-100),int(self.height/2-100)))
         self.creator.attributes('-alpha',0.8)
+        self.creator.grid_columnconfigure(0, weight=1)
+        self.creator.grid_columnconfigure(1, weight=1)
+        for i in range(0, 4): 
+            self.creator.grid_rowconfigure(i, weight=1)
         self.creator.protocol("WM_DELETE_WINDOW", self.create_window_delete)
         self.creator.deiconify()
 
 
         # Create Text Boxes
-        self.descrip = Entry(self.creator, width=20)
+        self.descrip = Entry(self.creator, width=30)
         self.descrip.grid(row=0, column=1, padx=10, pady=(10, 0))
 
-        self.hotkeys= Entry(self.creator, width=20)
-        self.hotkeys.grid(row=1, column=1)
+        self.hotkeys= Entry(self.creator, width=30)
+        self.hotkeys.grid(row=1, column=1, padx=10, pady=(10, 0))
 
 
         # Create Text Box Labels
         self.descrip_label = Label(self.creator, text="功能名稱")
-        self.descrip_label.grid(row=0, column=0, pady=(20, 0))
+        self.descrip_label.grid(row=0, column=0, padx=10, pady=(20, 0))
         self.hotkeys_label = Label(self.creator, text="快捷鍵組合")
-        self.hotkeys_label.grid(row=1, column=0)
+        self.hotkeys_label.grid(row=1, column=0, padx=10)
 
 
-        # Create Submit Button
+        # Record Hotkey Button
+        self.record_btn = Button(self.creator, text="偵測快捷鍵", command=self.record_hotkey)
+        self.record_btn.grid(row=2, column=0, columnspan=2, pady=5, ipadx=70)
+
+        # Submit Button
         self.submit_btn = Button(self.creator, text="送出", command=self.submit)
-        self.submit_btn.grid(row=2, column=0, columnspan=2, pady=10, ipadx=70)
+        self.submit_btn.grid(row=3, column=0, columnspan=2, pady=5, ipadx=70)
+
         
         if hasattr(self,'dialogue_text'):
             self.dialogue = Label(self.creator, text=self.dialogue_text)
-            self.dialogue.grid(row=3, column=0, columnspan=2,  pady=2)
+            self.dialogue.grid(row=3, column=0, columnspan=2,  pady=5)
 
 
         
@@ -545,6 +555,70 @@ class MainWindow(object):
         self.descrip.delete(0, END)
         self.hotkeys.delete(0, END)
         self.create()
+
+
+    def record_hotkey(self):
+        """Record a hotkey sequence using pynput (keep all keys, normalize modifiers)."""
+        self.hotkeys.delete(0, END)
+        if hasattr(self, 'dialogue'):
+            self.dialogue.destroy()
+
+        self.dialogue = Label(self.creator, text="請按下快捷鍵組合（按 Enter 結束）…")
+        self.dialogue.grid(row=3, column=0, columnspan=2, pady=5, ipadx=70)
+        self.creator.update()
+
+        detected_keys = []
+
+        stop_keys = {"enter", "return", "esc", "escape"}
+
+        normalize_map = {
+            "ctrl_l": "ctrl", "ctrl_r": "ctrl",
+            "shift_l": "shift", "shift_r": "shift",
+            "alt_l": "alt", "alt_r": "alt",
+            "cmd": "win", "cmd_l": "win", "cmd_r": "win",
+            "option_l": "option", "option_r": "option",
+            "windows": "win", "super": "win",
+        }
+
+        def normalize_key(k: str) -> str:
+            k = k.lower()
+            return normalize_map.get(k, k)
+
+        def on_press(key):
+            try:
+                k = key.char.lower() if key.char else key.name
+            except AttributeError:
+                k = str(key).replace("Key.", "")
+            k = normalize_key(k)
+
+            if k in stop_keys:
+                return
+
+            detected_keys.append(k) 
+            print(f"Pressed: {k}")
+
+        def on_release(key):
+            try:
+                k = key.char.lower() if key.char else key.name
+            except AttributeError:
+                k = str(key).replace("Key.", "")
+            k = normalize_key(k)
+
+            if k in stop_keys:
+                return False 
+
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+        listener.join()
+
+        if hasattr(self, "dialogue"):
+            self.dialogue.destroy()
+
+        hotkey_str = ",".join(detected_keys)
+        self.hotkeys.insert(0, hotkey_str)
+
+        self.dialogue = Label(self.creator, text=f"已偵測到: {hotkey_str or '(無)'}")
+        self.dialogue.grid(row=3, column=0, columnspan=2, pady=5)
 
 
 
