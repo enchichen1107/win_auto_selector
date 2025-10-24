@@ -1,5 +1,4 @@
 import sqlite3
-import os
 
 class DBhandler:
     def __init__(self, path='./models/key_book.db'):
@@ -61,18 +60,13 @@ class DBhandler:
     def update_key(self, record_id, descrip, hotkeys):
         conn = self.connect()
         c = conn.cursor()
-        c.execute("""UPDATE keys SET
-                        descrip = :descrip,
-                        hotkeys = :hotkeys
-                     WHERE oid = :oid""",
-                  {
-                      'descrip': descrip,
-                      'hotkeys': hotkeys,
-                      'oid': record_id
-                  })
+        c.execute("""
+            UPDATE keys
+            SET descrip = ?, hotkeys = ?
+            WHERE oid = ?
+        """, (descrip, hotkeys, record_id))
         conn.commit()
         conn.close()
-
 
     def delete_key(self, record_id):
         conn = self.connect()
@@ -80,7 +74,6 @@ class DBhandler:
         c.execute("DELETE FROM keys WHERE oid = ?", (record_id,))
         conn.commit()
         conn.close()
-
 
     def restore_all(self):
         conn = self.connect()
@@ -92,4 +85,97 @@ class DBhandler:
         c.execute("DROP TABLE IF EXISTS positions;")
         conn.commit()
         conn.close()
+
+    def get_face_part(self):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("SELECT facePart FROM facials")
+        record = c.fetchall()
+        conn.close()
+        return record
+    
+    def get_positions_tables(self):
+        conn = self.connect()
+        c = conn.cursor()
+        listOfTables = c.execute(
+            """SELECT * FROM sqlite_master WHERE type='table' 
+            AND name='positions'; """).fetchall()
+        conn.close()
+        return listOfTables
+
+    def create_positions_table(self):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("""CREATE TABLE IF NOT EXISTS positions (
+            pos INT
+            )""")
+        conn.commit()
+        conn.close()
+
+    def insert_face_pos(self, pos):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("INSERT INTO positions VALUES (?)", (pos,))
+        conn.commit()
+        conn.close()
+
+    def update_face_pos(self, pos):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("UPDATE positions SET pos = ?", (pos,))
+        conn.commit()
+        conn.close()
+    
+    def get_face_pos(self):
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("SELECT pos FROM positions")
+        record = c.fetchall()
+        conn.close()
+        return record
+    
+    def domain_increment(self):
+        """Get current domain count and update it."""
+        conn = self.connect()
+        c = conn.cursor()
+
+        # Check if 'domains' table exists
+        listOfTables = c.execute(
+            """SELECT * FROM sqlite_master WHERE type='table' 
+            AND name='domains';"""
+        ).fetchall()
+
+        # If not exists → create and initialize
+        if not listOfTables:
+            c.execute("""CREATE TABLE IF NOT EXISTS domains (
+                            id INTEGER,
+                            counts INTEGER
+                        )""")
+            conn.commit()
+
+            # Initialize domain count
+            c.execute("INSERT INTO domains VALUES (?, ?)", (1, 1))
+            conn.commit()
+
+        else:
+            # Get current count
+            c.execute("SELECT counts FROM domains WHERE id = 1")
+            record = c.fetchone()
+            if record:
+                new_counts = record[0] + 1
+                # Update count
+                c.execute("UPDATE domains SET counts = ? WHERE id = ?", (new_counts, 1))
+                conn.commit()
+
+        conn.close()
+
+    def get_domain_count(self):
+        """Return current domain count (from domains table)."""
+        conn = self.connect()
+        c = conn.cursor()
+        c.execute("SELECT counts FROM domains WHERE id = 1")
+        record = c.fetchone()
+        conn.close()
+        return record[0] if record else 0
+
 

@@ -2,19 +2,10 @@ import multiprocessing
 import cv2 as cv
 import numpy as np
 import ctypes
-import time
 from tensorflow.keras.models import load_model
 import mediapipe as mp
-import sqlite3
-
-
-
-modelName = "init"
-mp_face_detection = mp.solutions.face_detection
-mp_face_mesh = mp.solutions.face_mesh
-fontpath = "./assets/NotoSansTC-Medium.otf"
-
-
+from db.handler import DBhandler
+from config import MODEL_NAME, FONT_PATH
 
 
 
@@ -25,7 +16,11 @@ class Worker(object):
         self._is_alive = multiprocessing.Value(ctypes.c_bool, True)
         self.queue     = queue
         self.width = 300
-        self.height = 300      
+        self.height = 300  
+        self.model_name = MODEL_NAME
+        self.font_path = FONT_PATH
+        self.db = DBhandler()
+
         
     def get_is_alive(self):
         with self._is_alive.get_lock():
@@ -47,6 +42,10 @@ class Worker(object):
 
 
     def run(self):
+        import mediapipe as mp 
+        self.face_mesh = mp.solutions.face_mesh
+        self.face_detection = mp.solutions.face_detection
+
 
         # init opencv settings
         cap = cv.VideoCapture(0, cv.CAP_DSHOW)
@@ -55,42 +54,20 @@ class Worker(object):
         cv.moveWindow('subtle facial',100,50)
                   
         
-        self.model = load_model('./models/'+modelName+'.h5')
+        self.model = load_model('./models/'+self.model_name+'.h5')
    
         # get facial part
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("SELECT facePart FROM facials")
-        record = c.fetchall()
+        record = self.db.get_face_part()
         self.facePart = record[0][0]
 
         # get head tilted position
-        c.execute("SELECT pos FROM positions")
-        record = c.fetchall()
-        conn.commit()
+        record = self.db.get_face_pos()
         self.settled = record[0][0]
-        conn.close()
 
-        self.pos = []
-        self.pos2 = []
-        self.sz = []
-
-
-        if self.facePart=="brow":
-            self.pos = [54, 345]
-            self.pos2 = [284, 116]
-            self.sz = [96,48]
-        elif self.facePart=="nose":
-            self.pos = [119,426]
-            self.pos2 = [348, 206]
-            self.sz = [60,26]
-        else:
-            self.pos = [207,430]
-            self.pos2 = [427, 210]
-            self.sz = [78,28]
+        self.pos, self.pos2, self.sz = self.get_face_part_positions(self.facePart)
         
         # start real time capture and detect
-        with mp_face_mesh.FaceMesh(
+        with self.face_mesh.FaceMesh(
                 max_num_faces=1,
                 refine_landmarks=True,
                 min_detection_confidence=0.5) as face_mesh:
@@ -115,7 +92,6 @@ class Worker(object):
                         
                     mesh_points = np.array([np.multiply([p.x, p.y], [img_w, img_h]).astype(int) for p in results.multi_face_landmarks[0].landmark])
 
-
                     # crop img
                     if self.settled == 1:
                         cropped_img = frame[mesh_points[self.pos[0]][1]:mesh_points[self.pos[1]][1],mesh_points[self.pos[0]][0]:mesh_points[self.pos[1]][0]].copy()
@@ -132,13 +108,10 @@ class Worker(object):
                     prediction = self.model.predict(img,verbose=0)
                     prediction = prediction[0][0]
 
-
                     if prediction>0.55:
                         if success_cnt==5: # logic for blocking false alarm
                             self.queue.put(1)
                             cv.putText(frame, "DETECTED", (100,100), cv.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3, cv.LINE_AA)
-                            print("gotcha")
-                            print(prediction)
                             success_cnt = 0
                         else:
                             success_cnt+=1
@@ -152,6 +125,15 @@ class Worker(object):
 
 
 
+    def get_face_part_positions(self, facePart):
+        """Define coordinates based on facial part"""
+        if facePart == "brow":
+            return [54, 345], [284, 116], [96, 48]
+        elif facePart == "nose":
+            return [119, 426], [348, 206], [60, 26]
+        else:
+            return [207, 430], [427, 210], [78, 28]
+        
 
                                              
 class Process(object):
