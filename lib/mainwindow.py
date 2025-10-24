@@ -11,6 +11,7 @@ from PIL import ImageTk
 import multiprocessing
 from pynput import mouse
 from pynput import keyboard
+from db.handler import DBhandler
 
 modelName = "init"
 clicked = False
@@ -47,14 +48,8 @@ class MainWindow(object):
         self.height = s_size[1]
         
         # Database
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS keys (
-            descrip text,
-            hotkeys text
-        )""")
-        conn.commit()
-        conn.close()
+        self.db = DBhandler()
+        self.db.create_keys_table()
         
         # End process on exit
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_deleted)
@@ -113,14 +108,9 @@ class MainWindow(object):
 
         for widget in self.root.winfo_children():
             widget.destroy()
-        
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
 
         # if hasn't chosen facial part, then choose it first
-        listOfTables = c.execute(
-            """SELECT * FROM sqlite_master WHERE type='table' 
-            AND name='facials'; """).fetchall()
+        listOfTables = self.db.get_face_tables()
  
         if listOfTables == []:
         
@@ -194,10 +184,7 @@ class MainWindow(object):
         self.subtle.deiconify()
         
         # get all keys
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("SELECT *, oid FROM keys")
-        records = c.fetchall()
+        records = self.db.get_all_keys()
         cnt = len(records)
 
         # Create btns
@@ -208,9 +195,6 @@ class MainWindow(object):
             self.buttons.append(Button(self.subtle, text=str(record[0]),
                                       command=lambda record=record:self.btn_callback(record[1])))
             self.buttons[idx].grid(row=idx, column=0, pady=3)
-
-        conn.commit()
-        conn.close()
         
         # Create backto Button
         if self.continue_subtle == 0:
@@ -250,16 +234,7 @@ class MainWindow(object):
 
     def restore_init(self):
         '''  restore all settings '''
-
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()      
-        c.execute("DROP TABLE IF EXISTS facials;")
-        conn.commit()
-        c.execute("DROP TABLE IF EXISTS domains;")
-        conn.commit()
-        c.execute("DROP TABLE IF EXISTS positions;")
-        conn.commit()
-        conn.close()
+        self.db.restore_all()
 
         if os.path.isfile('./models/'+modelName+'.h5'):
             os.remove('./models/'+modelName+'.h5')
@@ -317,26 +292,7 @@ class MainWindow(object):
         
     def update(self):
         '''  update hot keys '''
-
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-
-        record_id = self.delete_box.get()
-
-        c.execute("""UPDATE keys SET
-            descrip = :descrip,
-            hotkeys = :hotkeys
-
-            WHERE oid = :oid""",
-            {
-            'descrip': self.descrip_editor.get(),
-            'hotkeys': self.hotkeys_editor.get(),
-            'oid': record_id
-            })
-
-
-        conn.commit()
-        conn.close()
+        self.db.update_key(self.delete_box.get(), self.descrip_editor.get(), self.hotkeys_editor.get())
 
         self.editor.withdraw()
         self.root.deiconify()
@@ -364,11 +320,7 @@ class MainWindow(object):
         self.editor.attributes('-alpha',0.8)
         self.editor.deiconify()
         
-
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("SELECT *, oid FROM keys")
-        records = c.fetchall()
+        records = self.db.get_all_keys()
         cnt = len(records)
         
         self.descrips = []
@@ -377,9 +329,6 @@ class MainWindow(object):
             self.descrips.append(Label(self.editor, text=str(record[2]) + " " + str(record[0]) + ": " + str(record[1])))
             self.descrips[idx].grid(row=idx+1, column=0, columnspan=2, pady=1)
             self.options.append(record[2])
-            
-        conn.commit()
-        conn.close()
         
         # Create Edit Button
         self.create_btn = Button(self.editor, text="新增快捷鍵", command=self.create)
@@ -476,7 +425,7 @@ class MainWindow(object):
         
         if hasattr(self,'dialogue_text'):
             self.dialogue = Label(self.creator, text=self.dialogue_text)
-            self.dialogue.grid(row=3, column=0, columnspan=2,  pady=5)
+            self.dialogue.grid(row=4, column=0, columnspan=2,  pady=5)
 
 
         
@@ -484,13 +433,7 @@ class MainWindow(object):
     def delete(self):
         '''  delete a record '''
 
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("DELETE from keys WHERE oid = " + self.delete_box.get())
-
-        conn.commit()
-        conn.close()
-
+        self.db.delete_key(self.delete_box.get())
         self.edit()
         
                
@@ -530,22 +473,10 @@ class MainWindow(object):
             self.dialogue_text = "快捷鍵組合請以半形逗號,做按鍵分割"
         else:
             keys = hotkey.split(',')
-            success = True
-            for k in keys:
-                if k not in pyautogui.KEYBOARD_KEYS:
-                    success = False
-                    break
-            if success:        
-                conn = sqlite3.connect('./models/key_book.db')
-                c = conn.cursor()
-                c.execute("INSERT INTO keys VALUES (:descrip, :hotkeys)",
-                        {
-                            'descrip': description,
-                            'hotkeys': hotkey
-                        })
+            success = all(k in pyautogui.KEYBOARD_KEYS for k in keys)
 
-                conn.commit()
-                conn.close()
+            if success:   
+                self.db.insert_key(description, hotkey)     
                 self.dialogue_text = "成功加入快捷鍵"
             else:
                 self.dialogue_text = "按鍵輸入錯誤\n請查照按鍵名稱對照表"
@@ -558,13 +489,14 @@ class MainWindow(object):
 
 
     def record_hotkey(self):
-        """Record a hotkey sequence using pynput (keep all keys, normalize modifiers)."""
+        """Record a hotkey sequence using pynput"""
+
         self.hotkeys.delete(0, END)
         if hasattr(self, 'dialogue'):
             self.dialogue.destroy()
 
         self.dialogue = Label(self.creator, text="請按下快捷鍵組合（按 Enter 結束）…")
-        self.dialogue.grid(row=3, column=0, columnspan=2, pady=5, ipadx=70)
+        self.dialogue.grid(row=4, column=0, columnspan=2, pady=5, ipadx=70)
         self.creator.update()
 
         detected_keys = []
@@ -584,6 +516,13 @@ class MainWindow(object):
             k = k.lower()
             return normalize_map.get(k, k)
 
+        def normalize_key(k: str) -> str:
+            k = k.lower()
+            k = normalize_map.get(k, k)
+            if k not in pyautogui.KEYBOARD_KEYS:
+                return None
+            return k
+
         def on_press(key):
             try:
                 k = key.char.lower() if key.char else key.name
@@ -591,11 +530,12 @@ class MainWindow(object):
                 k = str(key).replace("Key.", "")
             k = normalize_key(k)
 
-            if k in stop_keys:
+            if k is None or k in stop_keys:
                 return
 
-            detected_keys.append(k) 
+            detected_keys.append(k)
             print(f"Pressed: {k}")
+
 
         def on_release(key):
             try:
@@ -606,6 +546,8 @@ class MainWindow(object):
 
             if k in stop_keys:
                 return False 
+
+        self.creator.focus_set()
 
         listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         listener.start()
@@ -618,7 +560,7 @@ class MainWindow(object):
         self.hotkeys.insert(0, hotkey_str)
 
         self.dialogue = Label(self.creator, text=f"已偵測到: {hotkey_str or '(無)'}")
-        self.dialogue.grid(row=3, column=0, columnspan=2, pady=5)
+        self.dialogue.grid(row=4, column=0, columnspan=2, pady=5)
 
 
 
@@ -627,29 +569,14 @@ class MainWindow(object):
     def submit_face(self):
         '''  submit chosen facial parts '''
 
-        conn = sqlite3.connect('./models/key_book.db')
-        c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS facials (
-            facePart text
-            )""")
-        conn.commit()
-
-
-        c.execute("INSERT INTO facials VALUES (:facePart)",
-                {
-                    'facePart': self.faceVar.get()
-                })
-        conn.commit()
-
-
-        conn.close()
+        self.db.create_facials_table()
+        self.db.insert_face(self.faceVar.get())
 
         for widget in self.root.winfo_children():
             widget.destroy()
         self.show()
 
         
-
 
 
     def mainloop(self, *args):
